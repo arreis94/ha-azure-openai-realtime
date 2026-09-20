@@ -1,0 +1,2 @@
+# Python requirements for Azure OpenAI Realtime Voice Assistant
+aiortc==1.15.0

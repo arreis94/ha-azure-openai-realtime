@@ -1,0 +1,15 @@
+{
+  "domain": "openai_realtime",
+  "name": "Azure OpenAI Realtime Voice Assistant",
+  "codeowners": ["@shiipou"],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/shiipou/home-assistant-openai",
+  "integration_type": "service",
+  "iot_class": "cloud_push",
+  "issue_tracker": "https://github.com/shiipou/home-assistant-openai/issues",
+  "requirements": [
+    "aiortc==1.15.0"
+  ],
+  "version": "0.2.0"
+}

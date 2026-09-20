@@ -1,0 +1,41 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Assistant Vocal Azure OpenAI Realtime",
+        "description": "Configurer l'API Azure OpenAI Realtime (WebRTC) pour l'assistant vocal",
+        "data": {
+          "endpoint": "Point de terminaison Azure OpenAI (nom de ressource ou URL complète)",
+          "api_key": "Clé API Azure OpenAI",
+          "model": "Nom du déploiement de modèle",
+          "voice": "Voix",
+          "instructions": "Instructions Système",
+          "language": "Langue"
+        }
+      }
+    },
+    "error": {
+      "invalid_endpoint": "Point de terminaison Azure OpenAI invalide",
+      "invalid_api_key": "Clé API invalide",
+      "cannot_connect": "Impossible de se connecter à Azure OpenAI",
+      "unknown": "Erreur inconnue"
+    },
+    "abort": {
+      "already_configured": "Cette intégration est déjà configurée"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options Azure OpenAI Realtime",
+        "description": "Configurer le comportement de l'assistant vocal",
+        "data": {
+          "model": "Nom du déploiement de modèle",
+          "voice": "Voix",
+          "instructions": "Instructions Système",
+          "language": "Langue"
+        }
+      }
+    }
+  }
+}

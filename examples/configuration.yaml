@@ -1,0 +1,43 @@
+# Example Home Assistant configuration for OpenAI Realtime Voice Assistant
+
+# Add to your configuration.yaml if needed
+# Most configuration is done through the UI
+
+# Optional: Enable debug logging
+logger:
+  default: info
+  logs:
+    custom_components.openai_realtime: debug
+
+# Optional: Configure automation to greet when assistant starts
+automation:
+  - alias: "Voice Assistant Greeting"
+    trigger:
+      - platform: homeassistant
+        event: start
+    action:
+      - service: tts.speak
+        data:
+          entity_id: tts.openai_realtime_tts
+          message: "Hello! I'm your OpenAI voice assistant. How can I help you today?"
+
+# Optional: Create scripts for common voice commands
+script:
+  ask_assistant:
+    alias: "Ask Voice Assistant"
+    sequence:
+      - service: conversation.process
+        data:
+          text: "{{ question }}"
+          agent_id: conversation.openai_realtime
+
+# Example usage in automations
+# automation:
+#   - alias: "Morning Briefing"
+#     trigger:
+#       - platform: time
+#         at: "07:00:00"
+#     action:
+#       - service: script.ask_assistant
+#         data:
+#           question: "What's the weather forecast for today?"

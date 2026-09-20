@@ -66,6 +66,16 @@ DATA_CHANNEL_OPEN_TIMEOUT = 15
 DRAIN_TIMEOUT = 60
 
 
+def frame_to_pcm(frame: av.AudioFrame) -> bytes:
+    """Extract the valid PCM16 mono bytes from a frame.
+
+    The plane buffer is larger than the audio it holds (FFmpeg alignment
+    padding); reading it whole injects garbage between chunks, which is
+    audible as clicks/distortion. Only the first samples * 2 bytes are valid.
+    """
+    return bytes(frame.planes[0])[: frame.samples * 2]
+
+
 class MicrophoneStreamTrack(MediaStreamTrack):
     """Outgoing audio track fed with PCM16 mono chunks from Home Assistant.
 
@@ -132,7 +142,7 @@ class MicrophoneStreamTrack(MediaStreamTrack):
             resampled = [resampled]
         for out_frame in resampled:
             if out_frame is not None:
-                out.extend(bytes(out_frame.planes[0]))
+                out.extend(frame_to_pcm(out_frame))
         return bytes(out)
 
     async def wait_drained(self, timeout: float = DRAIN_TIMEOUT) -> None:
@@ -410,7 +420,7 @@ class OpenAIRealtimeClient:
                 for out_frame in resampled:
                     if out_frame is None:
                         continue
-                    self._audio_callback(bytes(out_frame.planes[0]))
+                    self._audio_callback(frame_to_pcm(out_frame))
         except MediaStreamError:
             _LOGGER.debug("Remote audio track ended")
         except asyncio.CancelledError:

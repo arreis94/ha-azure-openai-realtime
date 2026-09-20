@@ -102,18 +102,13 @@ class OpenAIRealtimeSTTEntity(SpeechToTextEntity):
         while not self._transcript_queue.empty():
             self._transcript_queue.get_nowait()
 
-        # Set up transcript callback
-        transcript_parts = []
-
-        def transcript_callback(text: str) -> None:
-            transcript_parts.append(text)
+        # STT returns the server-side transcription of the user's speech
+        # (conversation.item.input_audio_transcription.completed); the model
+        # response is triggered later by the conversation agent stage.
+        def input_transcript_callback(text: str) -> None:
             self._transcript_queue.put_nowait(text)
 
-        def response_done_callback() -> None:
-            self._transcript_queue.put_nowait(None)  # Signal completion
-
-        self.client.set_transcript_callback(transcript_callback)
-        self.client.set_response_done_callback(response_done_callback)
+        self.client.set_input_transcript_callback(input_transcript_callback)
 
         try:
             # Stream audio to Azure OpenAI
@@ -121,21 +116,16 @@ class OpenAIRealtimeSTTEntity(SpeechToTextEntity):
                 if chunk:
                     await self.client.send_audio(chunk)
 
-            # Commit audio buffer to trigger processing
+            # Commit audio buffer to trigger transcription
             await self.client.commit_audio()
 
-            # Wait for transcript completion
-            while True:
-                text = await asyncio.wait_for(
-                    self._transcript_queue.get(), timeout=30.0
-                )
-                if text is None:  # Done signal
-                    break
-
-            full_transcript = "".join(transcript_parts)
+            # Wait for the transcription of the user's speech
+            transcript = await asyncio.wait_for(
+                self._transcript_queue.get(), timeout=30.0
+            )
 
             return SpeechResult(
-                text=full_transcript,
+                text=transcript,
                 result=SpeechResultState.SUCCESS,
             )
 

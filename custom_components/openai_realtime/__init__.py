@@ -12,7 +12,7 @@ from .realtime_client import OpenAIRealtimeClient
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS: list[Platform] = [Platform.STT, Platform.TTS]
+PLATFORMS: list[Platform] = [Platform.CONVERSATION, Platform.STT, Platform.TTS]
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

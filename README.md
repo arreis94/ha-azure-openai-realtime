@@ -59,9 +59,14 @@ After adding the integration, you can configure the following options:
 
 1. Go to **Settings** → **Voice Assistants**
 2. Click on your assistant (default is "Home Assistant")
-3. Under **Speech-to-text**, select **Azure OpenAI Realtime STT**
-4. Under **Text-to-speech**, select **Azure OpenAI Realtime TTS**
-5. Save your changes
+3. Under **Conversation agent**, select **Azure OpenAI Realtime**
+4. Under **Speech-to-text**, select **Azure OpenAI Realtime STT**
+5. Under **Text-to-speech**, select **Azure OpenAI Realtime TTS**
+6. Save your changes
+
+All three stages share one realtime session: STT returns the transcription of your speech, the conversation agent generates the reply (keeping multi-turn context server-side), and TTS speaks the reply verbatim. You can also mix and match — e.g. use only the conversation agent with a local STT/TTS.
+
+The conversation agent can control your Home Assistant devices: entities you [expose to Assist](https://www.home-assistant.io/voice_control/voice_remote_expose_devices/) are made available to the model as tools via Home Assistant's Assist LLM API.
 
 ### Using the Voice Assistant
 
@@ -199,7 +204,6 @@ Monitor your usage at [OpenAI Usage Dashboard](https://platform.openai.com/usage
 
 ## Known Limitations
 
-- Require open word because of Home Assistant Conversationnal agent (PR are welcome to fix this)
 - Requires active internet connection
 - May have higher latency on slower connections
 - API costs can add up with frequent use

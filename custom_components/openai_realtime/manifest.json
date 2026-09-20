@@ -3,7 +3,7 @@
   "name": "Azure OpenAI Realtime Voice Assistant",
   "codeowners": ["@shiipou"],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": ["conversation"],
   "documentation": "https://github.com/shiipou/home-assistant-openai",
   "integration_type": "service",
   "iot_class": "cloud_push",

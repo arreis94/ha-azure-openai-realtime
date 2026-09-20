@@ -58,6 +58,8 @@ DATA_CHANNEL_NAME = "realtime-channel"
 
 # Session Configuration
 SESSION_TURN_DETECTION_TYPE = "semantic_vad"
+# Model used server-side to transcribe the user's speech for STT results
+INPUT_TRANSCRIPTION_MODEL = "whisper-1"
 
 # WebSocket Events - Outgoing (sent over the WebRTC data channel)
 EVENT_TYPE_SESSION_UPDATE = "session.update"
@@ -74,6 +76,7 @@ EVENT_SESSION_UPDATED = "session.updated"
 EVENT_INPUT_AUDIO_BUFFER_COMMITTED = "input_audio_buffer.committed"
 EVENT_INPUT_AUDIO_BUFFER_CLEARED = "input_audio_buffer.cleared"
 EVENT_RESPONSE_CREATED = "response.created"
+EVENT_RESPONSE_OUTPUT_ITEM_DONE = "response.output_item.done"
 EVENT_TYPE_RESPONSE_DONE = "response.done"
 EVENT_TYPE_RESPONSE_AUDIO_TRANSCRIPT_DELTA = "response.output_audio_transcript.delta"
 EVENT_RESPONSE_AUDIO_TRANSCRIPT_DONE = "response.output_audio_transcript.done"
@@ -83,6 +86,13 @@ EVENT_TYPE_INPUT_AUDIO_BUFFER_SPEECH_STOPPED = "input_audio_buffer.speech_stoppe
 # WebRTC-specific: playout of the response audio track started/stopped
 EVENT_OUTPUT_AUDIO_BUFFER_STARTED = "output_audio_buffer.started"
 EVENT_OUTPUT_AUDIO_BUFFER_STOPPED = "output_audio_buffer.stopped"
+# Server-side transcription of the user's speech (input audio)
+EVENT_INPUT_AUDIO_TRANSCRIPTION_COMPLETED = (
+    "conversation.item.input_audio_transcription.completed"
+)
+EVENT_INPUT_AUDIO_TRANSCRIPTION_FAILED = (
+    "conversation.item.input_audio_transcription.failed"
+)
 EVENT_ERROR = "error"
 
 # Error codes

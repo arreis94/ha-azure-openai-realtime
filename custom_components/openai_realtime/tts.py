@@ -98,9 +98,9 @@ class OpenAIRealtimeTTSEntity(TextToSpeechEntity):
         self.client.set_audio_done_callback(audio_done_callback)
 
         try:
-            # Send text message
-            _LOGGER.info("TTS: Sending text message: %s", message)
-            await self.client.send_text(message)
+            # Request a verbatim, out-of-band spoken rendition of the text
+            _LOGGER.info("TTS: Speaking text: %s", message)
+            await self.client.send_tts_text(message)
 
             # Collect audio chunks
             _LOGGER.debug("TTS: Waiting for audio chunks...")

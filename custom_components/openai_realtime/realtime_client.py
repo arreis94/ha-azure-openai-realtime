@@ -40,9 +40,12 @@ from .const import (
     DEFAULT_INSTRUCTIONS,
     DEFAULT_MODEL,
     DEFAULT_VOICE,
+    EVENT_INPUT_AUDIO_TRANSCRIPTION_COMPLETED,
+    EVENT_INPUT_AUDIO_TRANSCRIPTION_FAILED,
     EVENT_OUTPUT_AUDIO_BUFFER_STARTED,
     EVENT_OUTPUT_AUDIO_BUFFER_STOPPED,
     EVENT_RESPONSE_CREATED,
+    EVENT_RESPONSE_OUTPUT_ITEM_DONE,
     EVENT_TYPE_CONVERSATION_ITEM_CREATE,
     EVENT_TYPE_INPUT_AUDIO_BUFFER_CLEAR,
     EVENT_TYPE_INPUT_AUDIO_BUFFER_COMMIT,
@@ -53,6 +56,9 @@ from .const import (
     EVENT_TYPE_RESPONSE_CANCEL,
     EVENT_TYPE_RESPONSE_CREATE,
     EVENT_TYPE_RESPONSE_DONE,
+    EVENT_TYPE_RESPONSE_TEXT_DELTA,
+    EVENT_TYPE_SESSION_UPDATE,
+    INPUT_TRANSCRIPTION_MODEL,
     SESSION_TURN_DETECTION_TYPE,
 )
 from .exceptions import AuthenticationError, ConnectionError as RealtimeConnectionError
@@ -207,6 +213,8 @@ class OpenAIRealtimeClient:
         self._audio_callback: Callable[[bytes], None] | None = None
         self._audio_done_callback: Callable[[], None] | None = None
         self._transcript_callback: Callable[[str], None] | None = None
+        self._input_transcript_callback: Callable[[str], None] | None = None
+        self._function_call_callback: Callable[[dict[str, Any]], None] | None = None
         self._response_done_callback: Callable[[], None] | None = None
         self._speech_started_callback: Callable[[], None] | None = None
         self._speech_stopped_callback: Callable[[], None] | None = None
@@ -309,7 +317,15 @@ class OpenAIRealtimeClient:
                 "instructions": options.get(CONF_INSTRUCTIONS, DEFAULT_INSTRUCTIONS),
                 "audio": {
                     "input": {
-                        "turn_detection": {"type": SESSION_TURN_DETECTION_TYPE},
+                        # STT results come from server-side transcription of
+                        # the user's speech, not from a model response
+                        "transcription": {"model": INPUT_TRANSCRIPTION_MODEL},
+                        # The conversation agent triggers responses
+                        # explicitly; VAD must not auto-respond during STT
+                        "turn_detection": {
+                            "type": SESSION_TURN_DETECTION_TYPE,
+                            "create_response": False,
+                        },
                     },
                     "output": {
                         "voice": options.get(CONF_VOICE, DEFAULT_VOICE),
@@ -471,6 +487,47 @@ class OpenAIRealtimeClient:
                 if transcript and self._transcript_callback:
                     self._transcript_callback(transcript)
 
+            elif event_type == EVENT_TYPE_RESPONSE_TEXT_DELTA:
+                # Text-modality responses deliver text deltas instead of an
+                # audio transcript
+                text = data.get("delta", "")
+                if text and self._transcript_callback:
+                    self._transcript_callback(text)
+
+            elif event_type == EVENT_INPUT_AUDIO_TRANSCRIPTION_COMPLETED:
+                # Server-side transcription of what the user said (STT)
+                transcript = data.get("transcript", "")
+                _LOGGER.debug("Input transcription completed: %s", transcript)
+                if self._input_transcript_callback:
+                    self._input_transcript_callback(transcript)
+
+            elif event_type == EVENT_INPUT_AUDIO_TRANSCRIPTION_FAILED:
+                _LOGGER.error(
+                    "Input transcription failed: %s", data.get("error", {})
+                )
+                if self._input_transcript_callback:
+                    self._input_transcript_callback("")
+
+            elif event_type == EVENT_RESPONSE_OUTPUT_ITEM_DONE:
+                # The model requested a function/tool call
+                item = data.get("item") or {}
+                if (
+                    item.get("type") == "function_call"
+                    and self._function_call_callback
+                ):
+                    _LOGGER.debug(
+                        "Function call requested: %s(%s)",
+                        item.get("name"),
+                        item.get("arguments"),
+                    )
+                    self._function_call_callback(
+                        {
+                            "name": item.get("name"),
+                            "call_id": item.get("call_id"),
+                            "arguments": item.get("arguments"),
+                        }
+                    )
+
             elif event_type == EVENT_TYPE_RESPONSE_DONE:
                 self._has_active_response = False
                 if self._response_done_callback:
@@ -523,7 +580,12 @@ class OpenAIRealtimeClient:
         self._mic_track.write(audio_data)
 
     async def commit_audio(self) -> None:
-        """Commit the input audio buffer and request a response."""
+        """Commit the input audio buffer so it gets transcribed.
+
+        Does NOT request a model response: STT only needs the input
+        transcription; responses are created by the conversation agent
+        (send_text) or TTS (send_tts_text).
+        """
         if not self.connected:
             return
 
@@ -536,10 +598,6 @@ class OpenAIRealtimeClient:
                 _LOGGER.warning("Timed out draining microphone audio")
 
         self._send_event({"type": EVENT_TYPE_INPUT_AUDIO_BUFFER_COMMIT})
-
-        if not self._has_active_response:
-            self._send_event({"type": EVENT_TYPE_RESPONSE_CREATE})
-            self._has_active_response = True
 
     def _cancel_response_events(self) -> None:
         """Send the events that stop the current response and its audio."""
@@ -555,6 +613,40 @@ class OpenAIRealtimeClient:
         if not self.connected:
             return
         self._cancel_response_events()
+
+    async def update_session(self, session: dict[str, Any]) -> None:
+        """Update the live session config (instructions, tools, ...)."""
+        if not self.connected:
+            return
+        self._send_event(
+            {
+                "type": EVENT_TYPE_SESSION_UPDATE,
+                "session": {"type": "realtime", **session},
+            }
+        )
+
+    async def create_response(self) -> None:
+        """Request a model response for the current conversation state."""
+        if not self.connected:
+            return
+        self._send_event({"type": EVENT_TYPE_RESPONSE_CREATE})
+        self._has_active_response = True
+
+    async def send_function_result(self, call_id: str, output: str) -> None:
+        """Send the result of a function/tool call back to the model."""
+        if not self.connected:
+            _LOGGER.warning("Cannot send function result: not connected")
+            return
+        self._send_event(
+            {
+                "type": EVENT_TYPE_CONVERSATION_ITEM_CREATE,
+                "item": {
+                    "type": "function_call_output",
+                    "call_id": call_id,
+                    "output": output,
+                },
+            }
+        )
 
     async def send_text(self, text: str) -> None:
         """Send a text message to the conversation and request a response."""
@@ -577,6 +669,33 @@ class OpenAIRealtimeClient:
             self._send_event({"type": EVENT_TYPE_RESPONSE_CREATE})
             self._has_active_response = True
 
+    async def send_tts_text(self, text: str) -> None:
+        """Speak the given text verbatim (for TTS).
+
+        Uses an out-of-band response (conversation: "none") so the spoken
+        text neither responds to nor pollutes the conversation history.
+        """
+        if not self.connected:
+            _LOGGER.warning("Cannot send TTS text: not connected")
+            return
+
+        self._send_event(
+            {
+                "type": EVENT_TYPE_RESPONSE_CREATE,
+                "response": {
+                    "conversation": "none",
+                    "output_modalities": ["audio"],
+                    "tool_choice": "none",
+                    "instructions": (
+                        "Repeat the following message verbatim, exactly as "
+                        "written, in the same language, without adding, "
+                        "changing or omitting anything:\n\n" + text
+                    ),
+                },
+            }
+        )
+        self._has_active_response = True
+
     def set_audio_callback(self, callback: Callable[[bytes], None]) -> None:
         """Set callback for received audio."""
         self._audio_callback = callback
@@ -588,6 +707,16 @@ class OpenAIRealtimeClient:
     def set_transcript_callback(self, callback: Callable[[str], None]) -> None:
         """Set callback for received transcript."""
         self._transcript_callback = callback
+
+    def set_input_transcript_callback(self, callback: Callable[[str], None]) -> None:
+        """Set callback for the transcription of the user's speech (STT)."""
+        self._input_transcript_callback = callback
+
+    def set_function_call_callback(
+        self, callback: Callable[[dict[str, Any]], None]
+    ) -> None:
+        """Set callback for function/tool call requests from the model."""
+        self._function_call_callback = callback
 
     def set_response_done_callback(self, callback: Callable[[], None]) -> None:
         """Set callback for response completion."""

@@ -1,4 +1,4 @@
-"""Support for OpenAI Realtime text-to-speech."""
+"""Support for Azure OpenAI Realtime text-to-speech."""
 from __future__ import annotations
 
 import asyncio
@@ -6,81 +6,46 @@ import io
 import logging
 import wave
 
-from homeassistant.components.tts import Provider, Voice, TtsAudioType
+from homeassistant.components.tts import (
+    TextToSpeechEntity,
+    TtsAudioType,
+    Voice,
+)
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import AUDIO_CHANNELS, AUDIO_SAMPLE_RATE, DOMAIN
+from .const import AUDIO_CHANNELS, AUDIO_SAMPLE_RATE, DOMAIN, SUPPORTED_VOICES
 from .realtime_client import OpenAIRealtimeClient
 
 _LOGGER = logging.getLogger(__name__)
 
 
-async def async_setup_platform(
+async def async_setup_entry(
     hass: HomeAssistant,
-    config: dict,
-    async_add_entities,
-    discovery_info: dict | None = None,
+    config_entry: ConfigEntry,
+    async_add_entities: AddEntitiesCallback,
 ) -> None:
-    """Set up OpenAI Realtime TTS platform."""
-    # For config entry-based setup, we need discovery_info
-    if discovery_info is None:
-        return
-    
-    entry_id = discovery_info.get("entry_id")
-    if not entry_id or entry_id not in hass.data.get(DOMAIN, {}):
-        return
-    
-    client: OpenAIRealtimeClient = hass.data[DOMAIN][entry_id]["client"]
-    async_add_entities([OpenAIRealtimeTTSProvider(hass, client)])
+    """Set up Azure OpenAI Realtime TTS from a config entry."""
+    client: OpenAIRealtimeClient = hass.data[DOMAIN][config_entry.entry_id]["client"]
+    async_add_entities([OpenAIRealtimeTTSEntity(config_entry, client)])
 
 
-async def async_get_engine(
-    hass: HomeAssistant,
-    config: dict,
-    discovery_info: dict | None = None,
-) -> Provider | None:
-    """Set up OpenAI Realtime TTS provider (legacy method)."""
-    # Get the first available entry
-    entries = hass.config_entries.async_entries(DOMAIN)
-    if not entries:
-        return None
-    
-    entry = entries[0]
-    if entry.entry_id not in hass.data.get(DOMAIN, {}):
-        return None
-    
-    client: OpenAIRealtimeClient = hass.data[DOMAIN][entry.entry_id]["client"]
-    return OpenAIRealtimeTTSProvider(hass, client)
+class OpenAIRealtimeTTSEntity(TextToSpeechEntity):
+    """Azure OpenAI Realtime text-to-speech entity."""
 
+    _attr_name = "Azure OpenAI Realtime TTS"
 
-class OpenAIRealtimeTTSProvider(Provider):
-    """OpenAI Realtime text-to-speech provider."""
-
-    def __init__(self, hass: HomeAssistant, client: OpenAIRealtimeClient) -> None:
-        """Initialize the provider."""
-        self.hass = hass
+    def __init__(self, config_entry: ConfigEntry, client: OpenAIRealtimeClient) -> None:
+        """Initialize the entity."""
+        self._attr_unique_id = f"{config_entry.entry_id}-tts"
         self.client = client
         self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
-        self._name = "OpenAI Realtime TTS"
-
-    @property
-    def name(self) -> str:
-        """Return the name of the provider."""
-        return self._name
-
-    @name.setter
-    def name(self, value: str) -> None:
-        """Set the name of the provider (Home Assistant may override)."""
-        # Keep our custom name even if HA tries to set it to domain name
-        if value and not value.startswith("openai_"):
-            self._name = value
-        # Otherwise keep "OpenAI Realtime TTS"
 
     @property
     def supported_languages(self) -> list[str]:
         """Return a list of supported languages."""
-        return ["en", "es", "fr", "de", "it", "pt", "nl", "pl", "ru", "ja", "ko", "zh"]
+        return ["en", "es", "fr", "de", "it", "pt", "nl", "pl", "ru", "ja", "ko", "zh", "hu"]
 
     @property
     def default_language(self) -> str:
@@ -92,30 +57,16 @@ class OpenAIRealtimeTTSProvider(Provider):
         """Return a list of supported options."""
         return ["voice"]
 
-    async def async_get_supported_voices(self, language: str) -> list[Voice]:
+    @callback
+    def async_get_supported_voices(self, language: str) -> list[Voice] | None:
         """Return a list of supported voices for a language."""
-        return [
-            Voice("alloy", "Alloy"),
-            Voice("echo", "Echo"),
-            Voice("shimmer", "Shimmer"),
-        ]
-
-    def _create_wav_header(self, data_size: int) -> bytes:
-        """Create WAV file header."""
-        wav_buffer = io.BytesIO()
-        with wave.open(wav_buffer, "wb") as wav_file:
-            wav_file.setnchannels(AUDIO_CHANNELS)
-            wav_file.setsampwidth(2)  # 16-bit = 2 bytes
-            wav_file.setframerate(AUDIO_SAMPLE_RATE)
-            wav_file.writeframes(b"\x00" * data_size)
-        
-        return wav_buffer.getvalue()
+        return [Voice(voice, voice.capitalize()) for voice in SUPPORTED_VOICES]
 
     async def async_get_tts_audio(
         self, message: str, language: str, options: dict | None = None
     ) -> TtsAudioType:
         """Convert text to speech."""
-        
+
         # Ensure connected
         if not self.client.connected:
             try:
@@ -130,16 +81,16 @@ class OpenAIRealtimeTTSProvider(Provider):
 
         # Set up audio callback
         audio_chunks = []
-        
+
         def audio_callback(audio_data: bytes) -> None:
             _LOGGER.debug("TTS: Received audio chunk of %d bytes", len(audio_data))
             audio_chunks.append(audio_data)
             self._audio_queue.put_nowait(audio_data)
-        
+
         def audio_done_callback() -> None:
             _LOGGER.info("TTS: Audio complete, collected %d chunks", len(audio_chunks))
             self._audio_queue.put_nowait(None)  # Signal completion
-        
+
         self.client.set_audio_callback(audio_callback)
         # With WebRTC the model audio streams in real time over the media
         # track; output_audio_buffer.stopped (not response.done) marks the
@@ -150,7 +101,7 @@ class OpenAIRealtimeTTSProvider(Provider):
             # Send text message
             _LOGGER.info("TTS: Sending text message: %s", message)
             await self.client.send_text(message)
-            
+
             # Collect audio chunks
             _LOGGER.debug("TTS: Waiting for audio chunks...")
             while True:
@@ -160,15 +111,15 @@ class OpenAIRealtimeTTSProvider(Provider):
                 if chunk is None:  # Done signal
                     _LOGGER.debug("TTS: Received completion signal")
                     break
-            
+
             # Combine all audio chunks
             full_audio = b"".join(audio_chunks)
             _LOGGER.info("TTS: Collected %d bytes of audio", len(full_audio))
-            
+
             if not full_audio:
                 _LOGGER.error("No audio data received")
                 return None, None
-            
+
             # Create WAV file
             wav_buffer = io.BytesIO()
             with wave.open(wav_buffer, "wb") as wav_file:
@@ -176,7 +127,7 @@ class OpenAIRealtimeTTSProvider(Provider):
                 wav_file.setsampwidth(2)  # 16-bit PCM
                 wav_file.setframerate(AUDIO_SAMPLE_RATE)
                 wav_file.writeframes(full_audio)
-            
+
             return "wav", wav_buffer.getvalue()
 
         except asyncio.TimeoutError:

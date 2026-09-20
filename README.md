@@ -59,8 +59,8 @@ After adding the integration, you can configure the following options:
 
 1. Go to **Settings** → **Voice Assistants**
 2. Click on your assistant (default is "Home Assistant")
-3. Under **Speech-to-text**, select **OpenAI Realtime STT**
-4. Under **Text-to-speech**, select **OpenAI Realtime TTS**
+3. Under **Speech-to-text**, select **Azure OpenAI Realtime STT**
+4. Under **Text-to-speech**, select **Azure OpenAI Realtime TTS**
 5. Save your changes
 
 ### Using the Voice Assistant

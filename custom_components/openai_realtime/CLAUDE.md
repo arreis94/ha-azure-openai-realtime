@@ -23,9 +23,9 @@ Requires an Azure OpenAI resource (endpoint + API key) with a realtime model dep
 
 ## Architecture
 
-One shared WebRTC client per config entry, consumed by two legacy-style HA platforms:
+One shared WebRTC client per config entry, consumed by two entity-based HA platforms:
 
-- `__init__.py` creates a single `OpenAIRealtimeClient` and stores it in `hass.data[DOMAIN][entry_id]["client"]`, then loads the STT and TTS platforms via the legacy `async_load_platform` discovery mechanism (not modern config-entry platform forwarding / entity classes). `stt.py` and `tts.py` implement the legacy `Provider` interfaces and expose both `async_setup_platform` and `async_get_engine`. Config entries are version 2 (endpoint + API key in `data`, deployment/voice/instructions in `options`); version 1 entries (old OpenAI WebSocket config) can't be migrated — `async_migrate_entry` returns False.
+- `__init__.py` creates a single `OpenAIRealtimeClient`, stores it in `hass.data[DOMAIN][entry_id]["client"]`, and forwards the entry to the STT and TTS platforms via `async_forward_entry_setups`. `stt.py` / `tts.py` implement the modern `SpeechToTextEntity` / `TextToSpeechEntity` classes (NOT the legacy `Provider` interface — legacy providers show up disabled in the Assist pipeline UI). Each entity gets a `unique_id` of `{entry_id}-stt` / `{entry_id}-tts`; an options-update listener reloads the entry. Config entries are version 2 (endpoint + API key in `data`, deployment/voice/instructions in `options`); version 1 entries (old OpenAI WebSocket config) can't be migrated — `async_migrate_entry` returns False.
 
 - `realtime_client.py` owns the WebRTC session (Azure GA protocol):
   1. `connect()` POSTs the session config (model deployment, instructions, `semantic_vad`, voice) to `{endpoint}/openai/v1/realtime/client_secrets` with the `api-key` header → ephemeral client secret.

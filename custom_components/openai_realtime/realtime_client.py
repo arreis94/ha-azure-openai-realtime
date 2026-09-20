@@ -626,10 +626,21 @@ class OpenAIRealtimeClient:
         )
 
     async def create_response(self) -> None:
-        """Request a model response for the current conversation state."""
+        """Request a text-only model response for the current conversation.
+
+        Conversation-stage responses must not produce audio: their playout
+        on the media track would leak into the TTS stage's capture and the
+        user would hear the reply twice. Speech is produced exclusively by
+        send_tts_text.
+        """
         if not self.connected:
             return
-        self._send_event({"type": EVENT_TYPE_RESPONSE_CREATE})
+        self._send_event(
+            {
+                "type": EVENT_TYPE_RESPONSE_CREATE,
+                "response": {"output_modalities": ["text"]},
+            }
+        )
         self._has_active_response = True
 
     async def send_function_result(self, call_id: str, output: str) -> None:
@@ -649,7 +660,7 @@ class OpenAIRealtimeClient:
         )
 
     async def send_text(self, text: str) -> None:
-        """Send a text message to the conversation and request a response."""
+        """Send a text message and request a text-only response."""
         if not self.connected:
             _LOGGER.warning("Cannot send text: not connected")
             return
@@ -666,8 +677,7 @@ class OpenAIRealtimeClient:
         )
 
         if not self._has_active_response:
-            self._send_event({"type": EVENT_TYPE_RESPONSE_CREATE})
-            self._has_active_response = True
+            await self.create_response()
 
     async def send_tts_text(self, text: str) -> None:
         """Speak the given text verbatim (for TTS).
@@ -678,6 +688,13 @@ class OpenAIRealtimeClient:
         if not self.connected:
             _LOGGER.warning("Cannot send TTS text: not connected")
             return
+
+        # Safety net: if any earlier response audio is still playing out,
+        # clear it so it can't leak into this capture.
+        if self._output_audio_active:
+            _LOGGER.debug("Clearing leftover output audio before TTS")
+            self._send_event({"type": EVENT_TYPE_OUTPUT_AUDIO_BUFFER_CLEAR})
+            self._output_audio_active = False
 
         self._send_event(
             {
